@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:15
+    container_name: oauth2_application_db
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend_app:
+    build:
+      context: ./backend_app
+    container_name: oauth2_application_backend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - app-network
+    command: >
+      sh -c "if [ \"${NODE_ENV}\" = 'production' ]; then 
+        npm run start; 
+      else 
+        npm run dev; 
+      fi"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/v1/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend_app:
+    build:
+      context: ./frontend_app
+    container_name: oauth2_application_frontend
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env
+    environment:
+      VITE_HOST: "0.0.0.0"
+    networks:
+      - app-network
+    command: >
+      sh -c "if [ \"${NODE_ENV}\" = 'production' ]; then 
+        npm run build && npm run preview --host; 
+      else 
+        npm run dev --host; 
+      fi"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5173 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    stdin_open: true
+    tty: true
+
+volumes:
+  db-data:
+
+networks:
+  app-network:
+    driver: bridge
